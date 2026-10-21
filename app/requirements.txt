@@ -1,0 +1,4 @@
+# Runtime dependencies (pinned for repeatable builds)
+fastapi==0.156.8
+uvicorn==0.54.0
+prometheus-client==0.26.0
