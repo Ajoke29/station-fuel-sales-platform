@@ -1,0 +1,67 @@
+# Alerts for the Station Fuel Sales app. Needs the Prometheus Operator CRDs
+# (installed by kube-prometheus-stack). Apply with:
+#   kubectl apply -f monitoring/prometheus-rules.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: station-fuel-sales-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+    app.kubernetes.io/part-of: station-fuel-sales-platform
+spec:
+  groups:
+    - name: station-fuel-sales.availability
+      rules:
+        - alert: StationFuelSalesPodRestarting
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace=~"fuel-sales-.*", container="app"}[15m]) > 2
+          for: 5m
+          labels:
+            severity: warning
+            team: it-ops
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} keeps restarting"
+            description: "The app container restarted {{ $value | humanize }} times in the last 15 minutes."
+            runbook_url: "https://github.com/Ajoke29/station-fuel-sales-platform/blob/main/docs/runbooks/pod-crashloop.md"
+
+        - alert: StationFuelSalesPodCrashLooping
+          expr: |
+            max by (namespace, pod) (
+              kube_pod_container_status_waiting_reason{namespace=~"fuel-sales-.*", container="app", reason="CrashLoopBackOff"}
+            ) == 1
+          for: 5m
+          labels:
+            severity: critical
+            team: it-ops
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is in CrashLoopBackOff"
+            description: "Kubernetes keeps restarting the app and it keeps failing."
+            runbook_url: "https://github.com/Ajoke29/station-fuel-sales-platform/blob/main/docs/runbooks/pod-crashloop.md"
+
+    - name: station-fuel-sales.errors
+      rules:
+        - record: station_fuel_sales:http_requests:rate5m
+          expr: sum by (namespace) (rate(http_requests_total{namespace=~"fuel-sales-.*"}[5m]))
+
+        - record: station_fuel_sales:http_errors:rate5m
+          expr: sum by (namespace) (rate(http_requests_total{namespace=~"fuel-sales-.*", status=~"5.."}[5m]))
+
+        - alert: StationFuelSalesHighErrorRate
+          # More than 5% of requests failing with a 5xx, and enough traffic to matter
+          expr: |
+            (
+              station_fuel_sales:http_errors:rate5m
+                /
+              station_fuel_sales:http_requests:rate5m
+            ) > 0.05
+            and
+            station_fuel_sales:http_requests:rate5m > 0.1
+          for: 5m
+          labels:
+            severity: critical
+            team: it-ops
+          annotations:
+            summary: "High 5xx error rate in {{ $labels.namespace }}"
+            description: "{{ $value | humanizePercentage }} of requests are failing with server errors."
+            runbook_url: "https://github.com/Ajoke29/station-fuel-sales-platform/blob/main/docs/runbooks/high-error-rate.md"

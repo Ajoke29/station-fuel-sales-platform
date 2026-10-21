@@ -1,0 +1,58 @@
+# Unit tests for the alert rules: `make monitoring-test`
+rule_files:
+  - ../../build/rules.yaml
+
+evaluation_interval: 1m
+
+tests:
+  - name: high error rate fires after 5 minutes of >5% 5xx
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{namespace="fuel-sales-dev", path="/api/sales", status="200"}'
+        values: '0+60x20'
+      - series: 'http_requests_total{namespace="fuel-sales-dev", path="/api/sales", status="500"}'
+        values: '0+12x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: StationFuelSalesHighErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: it-ops
+              namespace: fuel-sales-dev
+            exp_annotations:
+              summary: "High 5xx error rate in fuel-sales-dev"
+              description: "16.67% of requests are failing with server errors."
+              runbook_url: "https://github.com/Ajoke29/station-fuel-sales-platform/blob/main/docs/runbooks/high-error-rate.md"
+
+  - name: no alert when errors are rare
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{namespace="fuel-sales-dev", path="/api/sales", status="200"}'
+        values: '0+100x20'
+      - series: 'http_requests_total{namespace="fuel-sales-dev", path="/api/sales", status="500"}'
+        values: '0+1x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: StationFuelSalesHighErrorRate
+        exp_alerts: []
+
+  - name: restarting pod fires
+    interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_restarts_total{namespace="fuel-sales-dev", pod="sfs-abc", container="app"}'
+        values: '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: StationFuelSalesPodRestarting
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              team: it-ops
+              namespace: fuel-sales-dev
+              pod: sfs-abc
+              container: app
+            exp_annotations:
+              summary: "Pod fuel-sales-dev/sfs-abc keeps restarting"
+              description: "The app container restarted 15 times in the last 15 minutes."
+              runbook_url: "https://github.com/Ajoke29/station-fuel-sales-platform/blob/main/docs/runbooks/pod-crashloop.md"
