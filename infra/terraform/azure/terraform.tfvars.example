@@ -1,0 +1,14 @@
+# Copy to terraform.tfvars and adjust. terraform.tfvars is git-ignored.
+project     = "fuelsales"
+environment = "dev"
+location    = "canadaeast"
+
+# Your public IP, so you can reach storage / Key Vault from your laptop
+allowed_ip_ranges = ["203.0.113.10/32"]
+
+# Leave false unless you are practising AKS for an hour (nodes cost money)
+enable_aks = false
+
+tags = {
+  requested_by = "ajoke"
+}
