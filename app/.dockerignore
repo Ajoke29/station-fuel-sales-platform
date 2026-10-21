@@ -1,0 +1,15 @@
+# Keep the build context small and free of secrets
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+.venv
+venv
+tests
+requirements-dev.txt
+pytest.ini
+Dockerfile
+.dockerignore
+*.md
+.env
+.env.*
+.git
