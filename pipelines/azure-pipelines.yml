@@ -1,0 +1,199 @@
+# Azure DevOps multi-stage pipeline for the Station Fuel Sales platform.
+#
+# Before first run, create in Azure DevOps (Project settings):
+#   - Service connection (Docker Registry -> Azure Container Registry): "acr-fuel-sales"
+#   - Service connection (Kubernetes): "aks-fuel-sales-dev"
+#   - Environment "fuel-sales-dev" with an Approvals check (Environments -> ... -> Approvals and checks)
+# Names below are placeholders; nothing here contains secrets.
+
+trigger:
+  branches:
+    include: [main]
+
+pr:
+  branches:
+    include: [main]
+
+variables:
+  pythonVersion: "3.13"
+  hadolintVersion: "2.15.1"
+  helmVersion: "v4.3.1"
+  terraformVersion: "1.16.6"
+  trivyVersion: "0.76.1"
+  # Placeholders: replace with your own service connections / registry
+  dockerRegistryServiceConnection: "acr-fuel-sales"
+  containerRegistry: "acrfuelsalesdemo.azurecr.io"
+  kubernetesServiceConnection: "aks-fuel-sales-dev"
+  imageRepository: "station-fuel-sales"
+  imageTag: "$(Build.SourceVersion)"
+  chartPath: "helm/station-fuel-sales"
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  # ------------------------------------------------------------------ Lint
+  - stage: Lint
+    displayName: Lint
+    jobs:
+      - job: lint
+        displayName: hadolint, yamllint, helm lint, terraform fmt/validate
+        steps:
+          - checkout: self
+
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: $(pythonVersion)
+
+          - script: |
+              pip install yamllint==1.38.0
+              yamllint -s .
+            displayName: yamllint
+
+          - script: |
+              curl -fsSL -o hadolint "https://github.com/hadolint/hadolint/releases/download/v$(hadolintVersion)/hadolint-linux-x86_64"
+              chmod +x hadolint
+              ./hadolint app/Dockerfile
+            displayName: hadolint
+
+          - task: HelmInstaller@1
+            inputs:
+              helmVersionToInstall: $(helmVersion)
+
+          - script: |
+              for env in dev prod; do
+                helm lint $(chartPath) -f $(chartPath)/values-${env}.yaml
+                helm template sfs $(chartPath) -f $(chartPath)/values-${env}.yaml > /dev/null
+              done
+            displayName: helm lint + template
+
+          - task: TerraformInstaller@1
+            displayName: Install Terraform
+            inputs:
+              terraformVersion: $(terraformVersion)
+
+          - script: |
+              terraform fmt -check -recursive
+              terraform init -backend=false -input=false
+              terraform validate
+            workingDirectory: infra/terraform/azure
+            displayName: terraform fmt + validate
+
+  # ------------------------------------------------------------------ Test
+  - stage: Test
+    displayName: Test
+    dependsOn: []          # runs in parallel with Lint
+    jobs:
+      - job: pytest
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: $(pythonVersion)
+
+          - script: |
+              pip install -r requirements-dev.txt
+              pytest -v --junitxml=test-results.xml
+            workingDirectory: app
+            displayName: pytest
+
+          - task: PublishTestResults@2
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: JUnit
+              testResultsFiles: app/test-results.xml
+              testRunTitle: Unit tests
+
+  # ------------------------------------------------------------------ Scan
+  - stage: Scan
+    displayName: Security scan
+    dependsOn: []
+    jobs:
+      - job: trivy_fs
+        displayName: Trivy filesystem scan
+        steps:
+          - script: |
+              curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v$(trivyVersion)/trivy_$(trivyVersion)_Linux-64bit.tar.gz" | tar xz trivy
+              ./trivy fs --scanners vuln,secret --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 .
+              ./trivy fs --scanners misconfig --severity HIGH,CRITICAL --exit-code 0 .
+            displayName: trivy fs
+
+  # ------------------------------------------------------------------ Build
+  - stage: Build
+    displayName: Build, scan and push image
+    dependsOn: [Lint, Test, Scan]
+    jobs:
+      - job: build
+        steps:
+          - task: Docker@2
+            displayName: Build image
+            inputs:
+              command: build
+              containerRegistry: $(dockerRegistryServiceConnection)
+              repository: $(imageRepository)
+              Dockerfile: app/Dockerfile
+              buildContext: app
+              tags: |
+                $(imageTag)
+                main
+
+          - script: |
+              curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v$(trivyVersion)/trivy_$(trivyVersion)_Linux-64bit.tar.gz" | tar xz trivy
+              ./trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 $(containerRegistry)/$(imageRepository):$(imageTag)
+            displayName: Trivy image scan
+
+          - task: Docker@2
+            displayName: Push image
+            condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+            inputs:
+              command: push
+              containerRegistry: $(dockerRegistryServiceConnection)
+              repository: $(imageRepository)
+              tags: |
+                $(imageTag)
+                main
+
+  # ------------------------------------------------------------------ Deploy dev
+  - stage: DeployDev
+    displayName: Deploy to dev
+    dependsOn: Build
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: deploy_dev
+        displayName: Helm upgrade (dev)
+        # Approvals and checks are configured on this environment in Azure DevOps,
+        # so the stage pauses until an approver says yes.
+        environment: fuel-sales-dev
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: HelmInstaller@1
+                  inputs:
+                    helmVersionToInstall: $(helmVersion)
+
+                - task: HelmDeploy@1
+                  displayName: helm upgrade --install
+                  inputs:
+                    connectionType: Kubernetes Service Connection
+                    kubernetesServiceEndpoint: $(kubernetesServiceConnection)
+                    namespace: fuel-sales-dev
+                    command: upgrade
+                    chartType: FilePath
+                    chartPath: $(chartPath)
+                    releaseName: station-fuel-sales
+                    valueFile: $(chartPath)/values-dev.yaml
+                    overrideValues: image.repository=$(containerRegistry)/$(imageRepository),image.tag=$(imageTag),service.type=ClusterIP
+                    install: true
+                    waitForExecution: true
+                    arguments: --create-namespace --atomic --timeout 5m
+
+                - task: Kubernetes@1
+                  displayName: Smoke check rollout
+                  inputs:
+                    connectionType: Kubernetes Service Connection
+                    kubernetesServiceEndpoint: $(kubernetesServiceConnection)
+                    namespace: fuel-sales-dev
+                    command: rollout
+                    arguments: status deployment/station-fuel-sales --timeout=120s
