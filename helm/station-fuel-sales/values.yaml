@@ -1,0 +1,116 @@
+# Default values. values-dev.yaml and values-prod.yaml override these.
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/ajoke29/station-fuel-sales-platform
+  # Defaults to the chart appVersion when empty. CI publishes the git SHA and "main".
+  tag: "main"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  automount: false
+
+podAnnotations: {}
+podLabels: {}
+
+# Settings passed to the app through a ConfigMap (non-secret values only)
+config:
+  appEnv: dev
+  logLevel: INFO
+  salesSeed: "2026"
+  salesSampleDays: "7"
+  salesEndDate: "2026-10-20"
+  chaosEnabled: "false"
+
+containerPort: 8000
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+service:
+  type: ClusterIP
+  port: 80
+  nodePort: null
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: fuel-sales.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    cpu: 250m
+    memory: 192Mi
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 2
+  periodSeconds: 5
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+autoscaling:
+  enabled: false
+  minReplicas: 3
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# Creates a ServiceMonitor for the Prometheus Operator (kube-prometheus-stack).
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  # Must match the kube-prometheus-stack release label if your Prometheus selects by it
+  labels:
+    release: kube-prometheus-stack
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway

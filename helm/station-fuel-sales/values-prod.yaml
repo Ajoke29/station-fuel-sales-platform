@@ -1,0 +1,61 @@
+# Production-style example (not deployed anywhere; shows how prod would differ)
+replicaCount: 3
+
+image:
+  # Pin an immutable tag (the git SHA) in prod rather than "main"
+  tag: "REPLACE_WITH_GIT_SHA"
+  pullPolicy: IfNotPresent
+
+config:
+  appEnv: prod
+  logLevel: INFO
+  chaosEnabled: "false"
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: fuel-sales.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: fuel-sales-tls
+      hosts:
+        - fuel-sales.example.com
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+serviceMonitor:
+  enabled: true
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway

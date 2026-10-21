@@ -1,0 +1,16 @@
+apiVersion: v2
+name: station-fuel-sales
+description: Fictional daily fuel sales dashboard and API for a multi-site fuel retailer (demo).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - fastapi
+  - prometheus
+  - demo
+home: https://github.com/Ajoke29/station-fuel-sales-platform
+sources:
+  - https://github.com/Ajoke29/station-fuel-sales-platform
+maintainers:
+  - name: Ajoke Soyombo
+    url: https://github.com/Ajoke29

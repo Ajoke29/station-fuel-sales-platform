@@ -1,0 +1,19 @@
+Station Fuel Sales is deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+{{- if eq .Values.service.type "NodePort" }}
+
+On the local kind cluster, open: http://localhost:8080
+(kind forwards host port 8080 to NodePort {{ .Values.service.nodePort }})
+{{- else if .Values.ingress.enabled }}
+
+URL(s):
+{{- range .Values.ingress.hosts }}
+  https://{{ .host }}
+{{- end }}
+{{- else }}
+
+Port-forward to try it:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "sfs.fullname" . }} 8080:{{ .Values.service.port }}
+  then open http://localhost:8080
+{{- end }}
+
+Health:  /healthz  /readyz     Metrics: /metrics     API: /api/sales

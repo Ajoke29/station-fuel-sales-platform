@@ -1,0 +1,9 @@
+# Reviewed Trivy misconfiguration findings that do not apply here.
+
+# ConfigMap holds only non-secret settings (log level, port, demo data seed).
+# Trivy flags the words "SEED"/"PORT" heuristically. Real secrets go in Key Vault.
+KSV-01010
+
+# Image comes from GitHub Container Registry (ghcr.io), our own trusted registry.
+# In Azure this would be the company's Azure Container Registry.
+KSV-0125

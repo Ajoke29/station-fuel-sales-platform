@@ -1,0 +1,16 @@
+# Local / dev environment (kind cluster on a laptop)
+replicaCount: 2
+
+image:
+  tag: "main"
+  pullPolicy: IfNotPresent
+
+config:
+  appEnv: dev
+  logLevel: DEBUG
+  chaosEnabled: "true"   # lets you trigger test errors to see alerts fire
+
+service:
+  type: NodePort
+  port: 80
+  nodePort: 30080        # kind maps this to http://localhost:8080
