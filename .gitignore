@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+test-results.xml
+
+# Terraform (the lock file IS committed)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+terraform.tfvars
+*.auto.tfvars
+override.tf
+override.tf.json
+
+# Secrets and local env
+.env
+.env.*
+*.pem
+*.key
+kubeconfig*
+
+# Build output
+build/
+rendered-*.yaml
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
